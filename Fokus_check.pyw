@@ -6,9 +6,10 @@ import pyautogui
 import pygame
 # from PIL import Image
 import threading
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QMainWindow, QFrame, QSpacerItem, QSizePolicy, QHBoxLayout, QSlider
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QMainWindow, QFrame, QSpacerItem, QSizePolicy, QHBoxLayout, QSlider, QProgressBar
 from PyQt5.QtCore import Qt
 from PyQt5 import QtGui
+from PyQt5.QtGui import QPixmap, QImage
 
 
 class environment:
@@ -17,7 +18,45 @@ class environment:
         self.gewarnt = False
         self.threads = []
         self.event_check_fokus = threading.Event()
-    
+        self.screen_fokus = None
+        self.statusdisplay_fokus_image = None
+        self.statusdisplay_fokus_progressbar = None
+
+    def init_statusdisplay_fokus_image(self):
+        self.statusdisplay_fokus_image = QLabel()
+
+    def update_statusdisplay_fokus_image(self):
+        if self.screen_fokus is not None:
+            qimage = QImage(self.screen_fokus.tobytes(), self.screen_fokus.width, self.screen_fokus.height, self.screen_fokus.width * 3, QImage.Format_RGB888)
+            qpixmap = QPixmap.fromImage(qimage)
+            self.statusdisplay_fokus_image.setPixmap(qpixmap)
+
+    def set_screen_fokus(self,screen_fokus):
+        self.screen_fokus = screen_fokus
+        self.update_statusdisplay_fokus_image()
+
+    def init_statusdisplay_fokus_progressbar(self):
+        self.statusdisplay_fokus_progressbar = QProgressBar()
+        self.statusdisplay_fokus_progressbar.setFixedWidth(210)
+        self.statusdisplay_fokus_progressbar.setFixedHeight(30)
+        # self.statusdisplay_fokus_progressbar.setStyleSheet(f'QProgressBar::chunk {{}} ; background-color: white; border: 1px solid black; padding: 0px ; color: black; font-size: 14px')
+        # self.statusdisplay_fokus_progressbar.setStyleSheet(f'QProgressBar::chunk {{background-color: pink; }}')
+        # ??? bar -- border-style: outset; border-width: 2px; border-color: #74c8ff; border-radius: 7px; margin-top: 1em;
+        # ??? chunk -- margin: 0px; width: 10px; border-bottom-right-radius: 10px; border-bottom-left-radius: 10px;
+        #  fokus 242, 130, 254 = #F282FE
+        self.statusdisplay_fokus_progressbar.setStyleSheet(f'QProgressBar {{background-color: white; color: black; text-align: center; }}\
+                                                             QProgressBar::chunk {{background-color: #F282FE; border-radius: 10px }}\
+                                                           ')
+        self.statusdisplay_fokus_progressbar.setRange(0, 100)
+        self.statusdisplay_fokus_progressbar.setValue(-1)
+
+    def update_statusdisplay_fokus_progressbar(self, value):
+        value = f'{value:.0f}'
+        value = int(value)
+        if self.statusdisplay_fokus_progressbar is not None:
+            self.statusdisplay_fokus_progressbar.setValue(value)
+
+
     def set_running(self,running):
         self.running = running
 
@@ -136,11 +175,9 @@ class myconfig:
     def calculate_variables(self):
         self.bar_breite = self.x2 - self.x1
 
-
-def count_pixels(config):
+def count_pixels(env,config):
     # Erfasse den Bildschirmbereich
-    # screenshot = pyautogui.screenshot(region=(config.x1, config.y1, config.x2 - config.x1, config.y2 - config.y1))
-    screenshot = get_screenshot(config.x1, config.y1, config.x2, config.y2)
+    screenshot = get_screenshot(env,'screen_fokus',config.x1, config.y1, config.x2, config.y2)
     # Initialisiere den Zähler für Pixel
     fokus_voll_pixel_count = 0
     fokus_leer_pixel_count = 0
@@ -191,12 +228,14 @@ Code Snippings für Debugging
 def sound_play(sound):
     sound.play()
 
-def get_screenshot(x1,y1,x2,y2):
+def get_screenshot(env,screen_name,x1,y1,x2,y2):
     screenshot = pyautogui.screenshot(region=(x1, y1, x2 - x1, y2 - y1))
+    if screen_name == 'screen_fokus' and env.statusdisplay_fokus_image is not None:
+        env.set_screen_fokus(screenshot)
     return screenshot
 
 def check_fokus(env,config):
-    fokus_voll,fokus_leer = count_pixels(config)
+    fokus_voll,fokus_leer = count_pixels(env,config)
     fokus_sichtbar = get_fokus_sichtbar(env,config,fokus_leer,fokus_voll)
     if fokus_sichtbar > 70:
             prozent_voll = fokus_voll / (fokus_voll + fokus_leer) * 100
@@ -212,11 +251,11 @@ def check_fokus(env,config):
                 print(f"Fokus Pixel Voll: {fokus_voll}")
                 print(f"Fokus Pixel Leer: {fokus_leer}")
             print(f"Prozentualer Fokus: {prozent_voll:.0f}%")
+            env.update_statusdisplay_fokus_progressbar(prozent_voll)
     else:
         print("Fokus nicht sichtbar")
 
 def fokus_check(env,config):
-
     while env.running == True:
         check_fokus(env,config)
         env.event_check_fokus.wait(config.intervall)
@@ -248,7 +287,16 @@ class MainWindow(QMainWindow):
         self.config_button_width = 50
         self.config_value_text_width = 40
         self.config_value_text_height = 30
-        
+
+        self.statusdisplay_color_background = '#C2C2C2'
+        self.statusdisplay_color_font = 'black'
+        self.statusdisplay_frame_width = 560
+        self.statusdisplay_frame_height = 278
+        self.statusdisplay_widget_width = 540
+        self.statusdisplay_widget_height = 50
+        self.statusdisplay_widget_border_radius = 10
+        self.statusdisplay_label_width = 270
+        self.statusdisplay_label_height = 30
 
         self.initUI(env,config)
 
@@ -258,7 +306,14 @@ class MainWindow(QMainWindow):
         config_frame.setFixedSize(self.config_frame_width , self.config_frame_height) 
         config_frame.setStyleSheet('background-color: yellow')
         return config_frame
-    
+
+    def create_statusdisplay_frame(self):
+        frame = QFrame(self)
+        frame.setFrameShape(QFrame.StyledPanel)
+        frame.setFixedSize(self.statusdisplay_frame_width , self.statusdisplay_frame_height) 
+        frame.setStyleSheet(f'background-color: lightgreen')
+        return frame
+
     def create_button_frame(self):
         button_frame = QFrame(self)
         button_frame.setFrameShape(QFrame.StyledPanel)
@@ -276,7 +331,7 @@ class MainWindow(QMainWindow):
     def get_max_radius(self,width,height):
         return height//2 if height < width else width//2
     
-    def create_style_sheet(self,groove_height,handle_margin,groove_color_background,handle_color_background,sub_page_color_background,add_page_color_background):
+    def create_slider_style_sheet(self,groove_height,handle_margin,groove_color_background,handle_color_background,sub_page_color_background,add_page_color_background):
         style_sheet = f'QSlider::groove:horizontal   {{ border: 1px solid black; background: {groove_color_background}  ;border-radius: 4px; height: {groove_height}px; margin: 0px 0; }} \
                         QSlider::handle:horizontal   {{ border: 1px solid black; background: {handle_color_background}  ;border-radius: 4px; width: 10px; margin: {handle_margin}px 0; }} \
                         QSlider::sub-page:horizontal {{ border: 1px solid black; background: {sub_page_color_background};border-radius: 4px; }} \
@@ -294,7 +349,7 @@ class MainWindow(QMainWindow):
         slider.setFixedWidth(width)
         slider.setFixedHeight(height)
         groove_height, handle_margin = self.calculate_slider_componets_size(height)
-        slider.setStyleSheet(self.create_style_sheet(groove_height,handle_margin,self.config_slider_groove_color_background,self.config_slider_handle_color_background,self.config_slider_sub_page_color_background,self.config_slider_add_page_color_background))
+        slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,self.config_slider_groove_color_background,self.config_slider_handle_color_background,self.config_slider_sub_page_color_background,self.config_slider_add_page_color_background))
         slider.setRange(min, max)
         slider.setValue(value)
         return slider
@@ -380,10 +435,10 @@ class MainWindow(QMainWindow):
 
         height = slider.height()
         groove_height, handle_margin = self.calculate_slider_componets_size(height)
-        slider.setStyleSheet(self.create_style_sheet(groove_height,handle_margin,'pink','yellow','pink','pink'))
+        slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,'pink','yellow','pink','pink'))
 
         if event_key in ['action_trigger',16777220,16777221]:
-            slider.setStyleSheet(self.create_style_sheet(groove_height,handle_margin,self.config_slider_groove_color_background,self.config_slider_handle_color_background,self.config_slider_sub_page_color_background,self.config_slider_add_page_color_background))
+            slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,self.config_slider_groove_color_background,self.config_slider_handle_color_background,self.config_slider_sub_page_color_background,self.config_slider_add_page_color_background))
             env.event_check_fokus.set()
             config.write_configfile(config_name, value)
 
@@ -484,6 +539,58 @@ class MainWindow(QMainWindow):
         config_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
         config_frame.setLayout(config_layout)
     
+    def show_statusdisplay_fokus(self,env,config):
+        widget = QWidget()
+        widget.setFixedWidth(self.statusdisplay_widget_width)
+        widget.setFixedHeight(self.statusdisplay_widget_height)
+        widget.setStyleSheet(f'background-color: {self.statusdisplay_color_background} ; border-radius: {self.statusdisplay_widget_border_radius}px; border: 0px solid black')
+
+        layout = QHBoxLayout()
+
+        label = QLabel('Fokus')
+        label.setFixedWidth(self.statusdisplay_label_width) 
+        label.setFixedHeight(self.statusdisplay_label_height)
+        label.setStyleSheet(f'color: {self.statusdisplay_color_font}; font-size: 14px; border: 0px solid black; padding: 5px')
+        layout.addWidget(label)
+
+        env.init_statusdisplay_fokus_progressbar()
+        layout.addWidget(env.statusdisplay_fokus_progressbar)
+
+        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        widget.setLayout(layout)
+        return widget
+
+    def fill_statusdisplay_frame(self,env,config,statusdisplay_frame):
+        layout = QVBoxLayout()
+        # layout.addWidget(QLabel('Statusdisplay'))
+
+        # Hier das Bild aus env.screen_fokus einfügen
+
+
+        # debug 
+        # debug_image = QLabel()
+        # # pyautogui.screenshot(region=(x1, y1, x2 - x1, y2 - y1))
+        # x1,y1 = 170, 80
+        # x2,y2 = 450, 140
+        # screenshot = pyautogui.screenshot(region=(x1, y1, x2 - x1, y2 - y1))
+        # qimage = QImage(screenshot.tobytes(), screenshot.width, screenshot.height, screenshot.width * 3, QImage.Format_RGB888)
+        # qpixmap = QPixmap.fromImage(qimage)
+        # debug_image.setPixmap(qpixmap)
+        # layout.addWidget(debug_image)
+
+        # env.init_statusdisplay_fokus_image()
+        # layout.addWidget(env.statusdisplay_fokus_image)
+
+        # env.init_statusdisplay_fokus_progressbar()
+        # layout.addWidget(env.statusdisplay_fokus_progressbar)
+
+        fokus_bar = self.show_statusdisplay_fokus(env,config)
+        layout.addWidget(fokus_bar)
+
+        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        statusdisplay_frame.setLayout(layout)
+        
+    
     def fill_debug_frame(self,env,config,debug_frame):
         # QLabel für Debug-Meldungen erstellen und dem Debug-Frame hinzufügen
         debug_label = QLabel(debug_frame)
@@ -500,17 +607,20 @@ class MainWindow(QMainWindow):
 
         # Frames erstellen
         config_frame = self.create_config_frame()
+        statusdisplay_frame = self.create_statusdisplay_frame()
         # button_frame = self.create_button_frame()
         # debug_frame = self.create_debug_frame()
 
         # Frames befüllen 
         self.fill_config_frame(env,config,config_frame)
+        self.fill_statusdisplay_frame(env,config,statusdisplay_frame)
         # self.fill_debug_frame(env,config,debug_frame)
 
 
         # Layouts erstellen
         left_layout = QVBoxLayout()
         left_layout.addWidget(config_frame,1)
+        left_layout.addWidget(statusdisplay_frame,1)
         # left_layout.addWidget(button_frame,1)
         left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
@@ -534,7 +644,7 @@ def set_volume(sound, volume):
 def gui(env,config):
     app = QApplication([])
     main_window = MainWindow(env,config)
-    main_window.setFixedSize(580, 300)
+    main_window.setFixedSize(580, 580)
     main_window.show()
     app.exec_()
     env.set_running(False)
