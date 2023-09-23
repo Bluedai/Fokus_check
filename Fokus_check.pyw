@@ -4,9 +4,10 @@
 import pyautogui
 # from collections import defaultdict
 import pygame
+import os
 # from PIL import Image
 import threading
-from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QMainWindow, QFrame, QSpacerItem, QSizePolicy, QHBoxLayout, QSlider, QProgressBar
+from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QMainWindow, QFrame, QSpacerItem, QSizePolicy, QHBoxLayout, QSlider, QProgressBar, QComboBox
 from PyQt5.QtCore import Qt
 from PyQt5 import QtGui
 from PyQt5.QtGui import QPixmap, QImage
@@ -44,9 +45,6 @@ class environment:
         # ??? bar -- border-style: outset; border-width: 2px; border-color: #74c8ff; border-radius: 7px; margin-top: 1em;
         # ??? chunk -- margin: 0px; width: 10px; border-bottom-right-radius: 10px; border-bottom-left-radius: 10px;
         #  fokus 242, 130, 254 = #F282FE
-        self.statusdisplay_fokus_progressbar.setStyleSheet(f'QProgressBar {{background-color: white; color: black; text-align: center; }}\
-                                                             QProgressBar::chunk {{background-color: #F282FE; border-radius: 10px }}\
-                                                           ')
         self.statusdisplay_fokus_progressbar.setRange(0, 100)
         self.statusdisplay_fokus_progressbar.setValue(-1)
 
@@ -55,7 +53,6 @@ class environment:
         value = int(value)
         if self.statusdisplay_fokus_progressbar is not None:
             self.statusdisplay_fokus_progressbar.setValue(value)
-
 
     def set_running(self,running):
         self.running = running
@@ -91,13 +88,21 @@ class myconfig:
 
     def set_user_default(self):
         self.debug = False
+        self.debug_level = 0
         self.warnschwelle = 33
         self.intervall = 10
         self.mp3_fokuswarnung = 'Fokuswarnung.mp3'
         self.volume_fokuswarnung = 100
+        self.theme = 'default'
+
+    def set_theme(self,theme):
+        self.theme = theme
 
     def set_debug(self,debug):
         self.debug = debug
+
+    def set_debug_level(self,debug_level):
+        self.debug_level = debug_level
 
     def set_warnschwelle(self,warnschwelle):
         self.warnschwelle = warnschwelle
@@ -118,6 +123,8 @@ class myconfig:
                         self.x2, self.y2 = map(int, line.split('=')[1].split('#')[0].strip().split(','))
                     elif line.startswith('debug ='):
                         self.debug = line.split('=')[1].split('#')[0].strip() == 'True'
+                    elif line.startswith('debug_level ='):
+                        self.debug_level = int(line.split('=')[1].split('#')[0].strip())
                     elif line.startswith('warnschwelle ='):
                         self.warnschwelle = int(line.split('=')[1].split('#')[0].strip())
                     elif line.startswith('intervall ='):
@@ -126,6 +133,9 @@ class myconfig:
                         self.mp3_fokuswarnung = line.split('=')[1].split('#')[0].strip()
                     elif line.startswith('volume_fokuswarnung'):
                         self.volume_fokuswarnung = int(line.split('=')[1].split('#')[0].strip())
+                    elif line.startswith('theme ='):
+                        self.theme = line.split('=')[1].split('#')[0].strip().strip("'").strip('"')
+
 
         except FileNotFoundError:
             print("Die Datei wurde nicht gefunden.")
@@ -135,25 +145,36 @@ class myconfig:
             print("Ein unbekannter Fehler ist aufgetreten:", str(e))
 
     def write_configfile(self,config_name,value):
-        print("debug schreibe file")
+        dprint(self,3,"Schreibe Konfigurationsdatei")
         found = False
+        format = 'int'
         content= []
         if config_name == 'debug':
             value = bool(value)
+            format = 'bool'
+        if config_name in ['theme','mp3_fokuswarnung']:
+            format = 'string'
         try:
             with open(self.config_file, 'r') as file:
                 for line in file:
                     if line.startswith(config_name):
                         found = True
                         comment = line.split('#', 1)[-1].strip()
-                        new_line = f'{config_name} = {value} # {comment}\n'
+                        if format in ['int','bool']:
+                            new_line = f"{config_name} = {value} # {comment}\n"
+                        elif format == 'string':
+                            new_line = f"{config_name} = '{value}' # {comment}\n"
+                            
                         content.append(new_line)
                     else:
                         line = line.rstrip('\n') # remove newline
                         line += '\n' # add newline
                         content.append(line)
                 if found == False:
-                    new_line = f'{config_name} = {value} # \n'
+                    if format in ['int','bool']:
+                        new_line = f'{config_name} = {value} # \n'
+                    elif format == 'string':
+                        new_line = f"{config_name} = '{value}' # \n"
                     content.append(new_line)
             with open(self.config_file, 'w') as file:
                 file.writelines(content)
@@ -188,8 +209,7 @@ def count_pixels(env,config):
     for x in range(config.x2 - config.x1):
         for y in range(config.y2 - config.y1):
             pixel_color = screenshot.getpixel((x, y))
-            if config.debug == True:
-                print(f"Pixel {x} {y} Farb:{pixel_color}")
+            dprint(config,3,f"Pixel {x} {y} Farb:{pixel_color}")
             # color_tupel = tuple(pixel_color)
             # color_counts[color_tupel] += 1
 
@@ -207,23 +227,8 @@ def count_pixels(env,config):
 def get_fokus_sichtbar(env,config,fokus_leer,fokus_voll):
     gesamt_erkannt = fokus_voll + fokus_leer
     fokus_sichtbar = gesamt_erkannt / config.bar_breite * 100
-    if config.debug == True:
-        print(f"Fokus sichtbar: {fokus_sichtbar:.0f}%")
-        # env.update_debug_label(f"Fokus sichtbar: {fokus_sichtbar:.0f}%")
+    dprint(config,3,f"Fokus sichtbar: {fokus_sichtbar:.0f}%")
     return fokus_sichtbar
-
-"""
-Code Snippings für Debugging
-        # Gib die Anzahl der verschiedenen Farben aus
-        # if debug == True:
-        #     for color, count in color_counts.items():
-        #         print(f"Farbe {color}: {count} Pixel")
-        # Screenshot anzeigen
-        # if config.debug == True:
-        #     screenshot.show()
-
-
-"""
 
 def sound_play(sound):
     sound.play()
@@ -240,20 +245,20 @@ def check_fokus(env,config):
     if fokus_sichtbar > 70:
             prozent_voll = fokus_voll / (fokus_voll + fokus_leer) * 100
             if prozent_voll < config.warnschwelle:
-                print("Fokuswarnung")
+                dprint(config,1,"Fokuswarnung")
                 if env.gewarnt == False:
                     env.set_gewarnt(True)
                     sound_play(env.mp3_Fokuswarnung)
             else:
                 if env.gewarnt == True:
                     env.set_gewarnt(False)
-            if config.debug == True:
-                print(f"Fokus Pixel Voll: {fokus_voll}")
-                print(f"Fokus Pixel Leer: {fokus_leer}")
-            print(f"Prozentualer Fokus: {prozent_voll:.0f}%")
+            dprint(config,3,f"Fokus Pixel Voll: {fokus_voll}")
+            dprint(config,3,f"Fokus Pixel Leer: {fokus_leer}")
+            dprint(config,1,f"Prozentualer Fokus: {prozent_voll:.0f}%")
+
             env.update_statusdisplay_fokus_progressbar(prozent_voll)
     else:
-        print("Fokus nicht sichtbar")
+        dprint(config,1,"Fokus nicht sichtbar")
 
 def fokus_check(env,config):
     while env.running == True:
@@ -264,32 +269,34 @@ def fokus_check(env,config):
 def gui_sound_test(env):
     sound_play(env.mp3_Fokuswarnung)
 
+def dprint(config,level,message):
+    # Debuglevel 
+    # 0: keine Ausgabe
+    # 1: Ausgabe Common
+    # 2: Ausgabe Info
+    # 3: Ausgabe Debug
+    if level <= config.debug_level:
+        print(message)
 
 class MainWindow(QMainWindow):
     def __init__(self,env,config):
         super().__init__()
-        self.config_color_background = '#C2C2C2'
-        self.config_color_font = 'black'
-        self.config_frame_width = 560
-        self.config_frame_height = 278 # 
+
         self.config_widget_width = 540
         self.config_widget_height = 60
         self.config_widget_border_radius = 10
+        count_widgets = 5
+        self.config_frame_width = 560
+        self.config_frame_height = count_widgets * 60 + 40
+
         self.config_label_width = 270
         self.config_label_height = 40
         self.config_slider_width = 200
         self.config_slider_height = 40
-        self.config_slider_groove_color_background = 'white'
-        self.config_slider_handle_color_background = '#3399ff'
-        self.config_slider_add_page_color_background = 'white'
-        self.config_slider_sub_page_color_background = '#3399ff'
-
         self.config_button_width = 50
         self.config_value_text_width = 40
         self.config_value_text_height = 30
 
-        self.statusdisplay_color_background = '#C2C2C2'
-        self.statusdisplay_color_font = 'black'
         self.statusdisplay_frame_width = 560
         self.statusdisplay_frame_height = 278
         self.statusdisplay_widget_width = 540
@@ -298,21 +305,185 @@ class MainWindow(QMainWindow):
         self.statusdisplay_label_width = 270
         self.statusdisplay_label_height = 30
 
+        self.window_width = 580
+        self.window_height = 8 + self.config_frame_height + 8 + self.statusdisplay_frame_height + 8
+
+        self.init_theme()
+        self.load_theme(env,config)
         self.initUI(env,config)
 
-    def create_config_frame(self):
-        config_frame = QFrame(self)
-        config_frame.setFrameShape(QFrame.StyledPanel)
-        config_frame.setFixedSize(self.config_frame_width , self.config_frame_height) 
-        config_frame.setStyleSheet('background-color: yellow')
-        return config_frame
+    def init_theme(self):
+        self.theme_color_window_background = 'lightgrey'
+        self.theme_color_frame_config_background = 'yellow'
+        self.theme_color_config_widget_background = '#C2C2C2'
+        self.theme_color_config_label_font = 'black'
+        self.theme_color_config_combo_box_background = 'white'
+        self.theme_color_config_combo_box_selection_background = '#3399ff'
+        self.theme_color_config_combo_box_font = 'black'
 
-    def create_statusdisplay_frame(self):
-        frame = QFrame(self)
-        frame.setFrameShape(QFrame.StyledPanel)
-        frame.setFixedSize(self.statusdisplay_frame_width , self.statusdisplay_frame_height) 
-        frame.setStyleSheet(f'background-color: lightgreen')
-        return frame
+        self.theme_config_slider_border = '1px solid black'
+        self.theme_color_config_slider_groove_background = 'white'
+        self.theme_color_config_slider_handle_background = '#3399ff'
+        self.theme_color_config_slider_add_page_background = 'white'
+        self.theme_color_config_slider_sub_page_background = '#3399ff'
+
+        self.theme_color_config_bubble_background = '#ffffff'
+        self.theme_color_config_bubble_font = '#000000'
+        self.theme_config_bubble_border = '1px solid #C2C2C2'
+
+        self.theme_color_frame_display_background = 'lightgreen'        
+
+        self.theme_color_display_fokusbar_background = '#ffffff'
+        self.theme_color_display_fokusbar_font = '#000000'
+        self.theme_align_display_fokusbar_text_align = 'center'
+        self.theme_color_display_fokusbar_chunk_background = '#F282FE'
+        self.theme_display_fokusbar_chunk_border = '1px solid #C2C2C2'
+        self.theme_display_fokusbar_chunk_border_radius = '10px'
+
+        self.statusdisplay_color_background = '#C2C2C2' 
+        self.statusdisplay_color_font = 'black'
+
+    def load_theme(self,env,config):
+        theme = config.theme
+        themefile = f'themes/{theme}.theme'
+        
+        try:
+            with open(themefile, 'r') as file:
+                print(f"Lade Theme: {theme} aus {themefile}")
+                for line in file:
+                    if line.startswith('window_background ='):
+                        self.theme_color_window_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"debug - window_background: {self.theme_color_window_background}")
+                    elif line.startswith('frame_config_background ='):
+                        self.theme_color_frame_config_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"frame_config_background: {self.theme_color_frame_config_background}")
+                    elif line.startswith('frame_display_background ='):
+                        self.theme_color_frame_display_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"frame_display_background: {self.theme_color_frame_display_background}")
+                    elif line.startswith('widget_background ='):
+                        self.theme_color_config_widget_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"widget_background: {self.theme_color_config_widget_background}")
+                    elif line.startswith('widget_font ='):
+                        self.theme_color_config_label_font = line.split('=')[1].split("'")[1].strip()
+                        # print(f"widget_font: {self.theme_color_config_label_font}")
+                    elif line.startswith('config_combo_box_background ='):
+                        self.theme_color_config_combo_box_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_combo_box_background: {self.theme_color_config_combo_box_background}")
+                    elif line.startswith('config_combo_box_font ='):
+                        self.theme_color_config_combo_box_font = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_combo_box_font: {self.theme_color_config_combo_box_font}")
+                    elif line.startswith('config_combo_box_selection_background ='):
+                        self.theme_color_config_combo_box_selection_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_combo_box_selection_background: {self.theme_color_config_combo_box_selection_background}")
+                    elif line.startswith('config_combo_box_selection_font ='):
+                        self.theme_color_config_combo_box_selection_font = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_combo_box_selection_font: {self.theme_color_config_combo_box_selection_font}")
+                    elif line.startswith('config_slider_border ='):
+                        self.theme_config_slider_border = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_slider_border: {self.theme_config_slider_border}")
+                    elif line.startswith('config_slider_groove_background ='):
+                        self.theme_color_config_slider_groove_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_slider_groove_background: {self.theme_color_config_slider_groove_background}")
+                    elif line.startswith('config_slider_handle_background ='):
+                        self.theme_color_config_slider_handle_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_slider_handle_background: {self.theme_color_config_slider_handle_background}")
+                    elif line.startswith('config_slider_add_page_background ='):
+                        self.theme_color_config_slider_add_page_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_slider_add_page_background: {self.theme_color_config_slider_add_page_background}")
+                    elif line.startswith('config_slider_sub_page_background ='):
+                        self.theme_color_config_slider_sub_page_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_slider_sub_page_background: {self.theme_color_config_slider_sub_page_background}")
+                    elif line.startswith('display_fokusbar_background ='):
+                        self.theme_color_display_fokusbar_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"display_fokusbar_background: {self.theme_color_display_fokusbar_background}")
+                    elif line.startswith('display_fokusbar_font ='):
+                        self.theme_color_display_fokusbar_font = line.split('=')[1].split("'")[1].strip()
+                        # print(f"display_fokusbar_font: {self.theme_color_display_fokusbar_font}")
+                    elif line.startswith('display_fokusbar_text_align ='):
+                        self.theme_align_display_fokusbar_text_align = line.split('=')[1].split("'")[1].strip()
+                        # print(f"display_fokusbar_text_align: {self.theme_align_display_fokusbar_text_align}")
+                    elif line.startswith('display_fokusbar_chunk_background ='):
+                        self.theme_color_display_fokusbar_chunk_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"display_fokusbar_chunk_background: {self.theme_color_display_fokusbar_chunk_background}")
+                    elif line.startswith('display_fokusbar_chunk_border ='):
+                        self.theme_display_fokusbar_chunk_border = line.split('=')[1].split("'")[1].strip()
+                        # print(f"display_fokusbar_chunk_border: {self.theme_display_fokusbar_chunk_border}")
+                    elif line.startswith('display_fokusbar_chunk_border_radius ='):
+                        self.theme_display_fokusbar_chunk_border_radius = line.split('=')[1].split("'")[1].strip()
+                        # print(f"display_fokusbar_chunk_border_radius: {self.theme_display_fokusbar_chunk_border_radius}")
+                    elif line.startswith('config_bubble_background ='):
+                        self.theme_color_config_bubble_background = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_bubble_background: {self.theme_color_config_bubble_background}")
+                    elif line.startswith('config_bubble_font ='):
+                        self.theme_color_config_bubble_font = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_bubble_font: {self.theme_color_config_bubble_font}")
+                    elif line.startswith('config_bubble_border ='):
+                        self.theme_config_bubble_border = line.split('=')[1].split("'")[1].strip()
+                        # print(f"config_bubble_border: {self.theme_config_bubble_border}")
+
+        except FileNotFoundError:
+            print(f"Die Datei {themefile} wurde nicht gefunden.")
+        except PermissionError:
+            print(f"Du hast keine Berechtigung, die Datei {themefile} zu lesen.")
+        except Exception as e:
+            print("Ein unbekannter Fehler ist aufgetreten:", str(e))
+
+    def gui_repaint_config_widgets(self,env,config):
+        widgetcount = 0
+        for widget in self.config_frame.children():
+            if widget.isWidgetType():
+                widgetcount += 1
+                self.set_config_widget_stylesheet(widget)
+                widget_child_count = 0
+                for widget_child in widget.children():
+                    # print(f"widget_child: {widget_child.__class__.__name__}")
+                    if isinstance(widget_child, QLabel):
+                        widget_child_count += 1
+                        if widget_child_count == 1:
+                            self.set_label_stylesheet(widget_child)
+                        elif widget_child_count == 2: 
+                            self.set_config_bubble_stylesheet(widget_child)
+                    elif isinstance(widget_child, QComboBox):
+                        self.set_config_combo_box_stylesheet(widget_child)
+                    elif isinstance(widget_child, QSlider):
+                        self.set_config_slider_stylesheet(widget_child)
+
+    def gui_repaint_display_widgets(self,env,config):
+        widgetcount = 0
+        for widget in self.display_frame.children():
+            if widget.isWidgetType():
+                widgetcount += 1
+                self.set_config_widget_stylesheet(widget)
+                widget_child_count = 0
+                for widget_child in widget.children():
+                    # print(f"widget_child: {widget_child.__class__.__name__}")
+                    if isinstance(widget_child, QLabel):
+                        widget_child_count += 1
+                        if widget_child_count == 1:
+                            self.set_label_stylesheet(widget_child)
+        self.set_display_fokusbar_stylesheet(env)
+
+    def gui_repaint(self,env,config):
+        self.set_main_stylesheet() 
+        self.set_frame_config_stylesheet()
+        self.set_frame_display_stylesheet()
+        
+        self.gui_repaint_config_widgets(env,config)
+        self.gui_repaint_display_widgets(env,config)
+        
+        self.repaint()
+
+    def create_config_frame(self):
+        self.config_frame = QFrame(self)
+        self.config_frame.setFrameShape(QFrame.StyledPanel)
+        self.config_frame.setFixedSize(self.config_frame_width , self.config_frame_height) 
+        self.set_frame_config_stylesheet()
+
+    def create_display_frame(self):
+        self.display_frame = QFrame(self)
+        self.display_frame.setFrameShape(QFrame.StyledPanel)
+        self.display_frame.setFixedSize(self.statusdisplay_frame_width , self.statusdisplay_frame_height)
+        self.set_frame_display_stylesheet()
 
     def create_button_frame(self):
         button_frame = QFrame(self)
@@ -332,10 +503,10 @@ class MainWindow(QMainWindow):
         return height//2 if height < width else width//2
     
     def create_slider_style_sheet(self,groove_height,handle_margin,groove_color_background,handle_color_background,sub_page_color_background,add_page_color_background):
-        style_sheet = f'QSlider::groove:horizontal   {{ border: 1px solid black; background: {groove_color_background}  ;border-radius: 4px; height: {groove_height}px; margin: 0px 0; }} \
-                        QSlider::handle:horizontal   {{ border: 1px solid black; background: {handle_color_background}  ;border-radius: 4px; width: 10px; margin: {handle_margin}px 0; }} \
-                        QSlider::sub-page:horizontal {{ border: 1px solid black; background: {sub_page_color_background};border-radius: 4px; }} \
-                        QSlider::add-page:horizontal {{ border: 1px solid black; background: {add_page_color_background};border-radius: 4px; }} \
+        style_sheet = f'QSlider::groove:horizontal   {{ border: {self.theme_config_slider_border}; background: {groove_color_background}  ;border-radius: 4px; height: {groove_height}px; margin: 0px 0; }} \
+                        QSlider::handle:horizontal   {{ border: {self.theme_config_slider_border}; background: {handle_color_background}  ;border-radius: 4px; width: 10px; margin: {handle_margin}px 0; }} \
+                        QSlider::sub-page:horizontal {{ border: {self.theme_config_slider_border}; background: {sub_page_color_background};border-radius: 4px; }} \
+                        QSlider::add-page:horizontal {{ border: {self.theme_config_slider_border}; background: {add_page_color_background};border-radius: 4px; }} \
                         '
         return style_sheet
     
@@ -349,24 +520,23 @@ class MainWindow(QMainWindow):
         slider.setFixedWidth(width)
         slider.setFixedHeight(height)
         groove_height, handle_margin = self.calculate_slider_componets_size(height)
-        slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,self.config_slider_groove_color_background,self.config_slider_handle_color_background,self.config_slider_sub_page_color_background,self.config_slider_add_page_color_background))
+        slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,self.theme_color_config_slider_groove_background,self.theme_color_config_slider_handle_background,self.theme_color_config_slider_sub_page_background,self.theme_color_config_slider_add_page_background))
         slider.setRange(min, max)
         slider.setValue(value)
         return slider
-
 
     def show_config_volume_fokuswarnung(self,env,config):
         widget = QWidget()
         widget.setFixedWidth(self.config_widget_width)
         widget.setFixedHeight(self.config_widget_height)
-        widget.setStyleSheet(f'background-color: {self.config_color_background} ; border-radius: {self.config_widget_border_radius}px; border: 0px solid black')
+        self.set_config_widget_stylesheet(widget)
 
         layout = QHBoxLayout()
 
         label = QLabel('Warnlautstärke')
         label.setFixedWidth(self.config_label_width-self.config_button_width-5-1) # -5 wegen padding -1 wegen weiß noch nicht warum
         label.setFixedHeight(self.config_label_height)
-        label.setStyleSheet(f'color: {self.config_color_font}; font-size: 14px; border: 0px solid black; padding: 5px')
+        self.set_label_stylesheet(label)
         layout.addWidget(label)
 
         play_button = QPushButton('Test')
@@ -386,8 +556,7 @@ class MainWindow(QMainWindow):
         label_volume.setFixedWidth(self.config_value_text_width)
         label_volume.setFixedHeight(self.config_value_text_height)
         label_volume.setAlignment(Qt.AlignCenter)
-        max_radius = self.get_max_radius(label_volume.sizeHint().width() , label_volume.sizeHint().height())
-        label_volume.setStyleSheet(f'background-color: white ; color: black; font-size: 14px; border: 1px solid black; padding: 5px; border-radius: {max_radius}px')
+        self.set_config_bubble_stylesheet(label_volume)
         layout.addWidget(label_volume)
 
         layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
@@ -399,14 +568,14 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         widget.setFixedWidth(self.config_widget_width)
         widget.setFixedHeight(self.config_widget_height)
-        widget.setStyleSheet(f'background-color: {self.config_color_background} ; border-radius: {self.config_widget_border_radius}px; border: 0px solid black')
+        self.set_config_widget_stylesheet(widget)
 
         layout = QHBoxLayout()
 
         label = QLabel('Warnschwelle')
         label.setFixedWidth(self.config_label_width) 
         label.setFixedHeight(self.config_label_height)
-        label.setStyleSheet(f'color: {self.config_color_font}; font-size: 14px; border: 0px solid black; padding: 5px')
+        self.set_label_stylesheet(label)
         layout.addWidget(label)
       
 
@@ -421,8 +590,7 @@ class MainWindow(QMainWindow):
         label_volume.setFixedWidth(self.config_value_text_width)
         label_volume.setFixedHeight(self.config_value_text_height)
         label_volume.setAlignment(Qt.AlignCenter)
-        max_radius = self.get_max_radius(label_volume.sizeHint().width() , label_volume.sizeHint().height())
-        label_volume.setStyleSheet(f'background-color: white ; color: black; font-size: 14px; border: 1px solid black; padding: 5px; border-radius: {max_radius}px')
+        self.set_config_bubble_stylesheet(label_volume)
         layout.addWidget(label_volume)
 
         layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
@@ -438,7 +606,7 @@ class MainWindow(QMainWindow):
         slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,'pink','yellow','pink','pink'))
 
         if event_key in ['action_trigger',16777220,16777221]:
-            slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,self.config_slider_groove_color_background,self.config_slider_handle_color_background,self.config_slider_sub_page_color_background,self.config_slider_add_page_color_background))
+            slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,self.theme_color_config_slider_groove_background,self.theme_color_config_slider_handle_background,self.theme_color_config_slider_sub_page_background,self.theme_color_config_slider_add_page_background))
             env.event_check_fokus.set()
             config.write_configfile(config_name, value)
 
@@ -457,14 +625,14 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         widget.setFixedWidth(self.config_widget_width)
         widget.setFixedHeight(self.config_widget_height)
-        widget.setStyleSheet(f'background-color: {self.config_color_background} ; border-radius: {self.config_widget_border_radius}px; border: 0px solid black')
+        self.set_config_widget_stylesheet(widget)
 
         layout = QHBoxLayout()
 
         label = QLabel('Prüfintervall in Sekunden')
         label.setFixedWidth(self.config_label_width) 
         label.setFixedHeight(self.config_label_height)
-        label.setStyleSheet(f'color: {self.config_color_font}; font-size: 14px; border: 0px solid black; padding: 5px')
+        self.set_label_stylesheet(label)
         layout.addWidget(label)
       
         slider = self.create_slider(self.config_slider_width,self.config_slider_height,1,60,config.intervall)
@@ -479,8 +647,7 @@ class MainWindow(QMainWindow):
         label_volume.setFixedWidth(self.config_value_text_width)
         label_volume.setFixedHeight(self.config_value_text_height)
         label_volume.setAlignment(Qt.AlignCenter)
-        max_radius = self.get_max_radius(label_volume.sizeHint().width() , label_volume.sizeHint().height())
-        label_volume.setStyleSheet(f'background-color: white ; color: black; font-size: 14px; border: 1px solid black; padding: 5px; border-radius: {max_radius}px')
+        self.set_config_bubble_stylesheet(label_volume)
         layout.addWidget(label_volume)
 
         layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
@@ -492,46 +659,83 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         widget.setFixedWidth(self.config_widget_width)
         widget.setFixedHeight(self.config_widget_height)
-        widget.setStyleSheet(f'background-color: {self.config_color_background} ; border-radius: {self.config_widget_border_radius}px; border: 0px solid black')
+        self.set_config_widget_stylesheet(widget)
+        # widget.setStyleSheet(f'background-color: {self.theme_color_config_widget_background} ; border-radius: {self.config_widget_border_radius}px; border: 0px solid black')
 
         layout = QHBoxLayout()
 
         label = QLabel('Debug')
         label.setFixedWidth(self.config_label_width) 
         label.setFixedHeight(self.config_label_height)
-        label.setStyleSheet(f'color: {self.config_color_font}; font-size: 14px; border: 0px solid black; padding: 5px')
+        self.set_label_stylesheet(label)
         layout.addWidget(label)
       
 
-        slider = self.create_slider(self.config_slider_width,self.config_slider_height,0,1,config.debug)
+        slider = self.create_slider(self.config_slider_width,self.config_slider_height,0,3,config.debug_level)
         slider.setPageStep(1)
-        slider.valueChanged.connect(lambda: (config.set_debug(slider.value()), label_volume.setText(str(slider.value()))))
-        slider.sliderReleased.connect(lambda: (config.write_configfile('debug', slider.value())))
-        slider.keyReleaseEvent= lambda event: (self.slider_use_keyboard(env,config,'debug',event.key(),slider) ) 
-        slider.actionTriggered.connect(lambda event: self.slider_action_triggered(env,config,'debug',event,slider))
+        slider.valueChanged.connect(lambda: (config.set_debug_level(slider.value()), label_volume.setText(str(slider.value()))))
+        slider.sliderReleased.connect(lambda: (config.write_configfile('debug_level', slider.value())))
+        slider.keyReleaseEvent= lambda event: (self.slider_use_keyboard(env,config,'debug_level',event.key(),slider) ) 
+        slider.actionTriggered.connect(lambda event: self.slider_action_triggered(env,config,'debug_level',event,slider))
         layout.addWidget(slider)
         
         label_volume = QLabel(str(slider.value()))
         label_volume.setFixedWidth(self.config_value_text_width)
         label_volume.setFixedHeight(self.config_value_text_height)
         label_volume.setAlignment(Qt.AlignCenter)
-        max_radius = self.get_max_radius(label_volume.sizeHint().width() , label_volume.sizeHint().height())
-        label_volume.setStyleSheet(f'background-color: white ; color: black; font-size: 14px; border: 1px solid black; padding: 5px; border-radius: {max_radius}px')
+        self.set_config_bubble_stylesheet(label_volume)
         layout.addWidget(label_volume)
 
         layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
 
         widget.setLayout(layout)
         return widget
+    def show_config_theme(self,env,config):
+        widget = QWidget()
+        widget.setFixedWidth(self.config_widget_width)
+        widget.setFixedHeight(self.config_widget_height)
+        self.set_config_widget_stylesheet(widget)
+
+        layout = QHBoxLayout()
+
+        label = QLabel('Theme')
+        label.setFixedWidth(self.config_label_width) 
+        label.setFixedHeight(self.config_label_height)
+        self.set_label_stylesheet(label)
+        layout.addWidget(label)
+
+        combo_box = QComboBox()
+        combo_box.setFixedWidth(self.config_slider_width)
+        combo_box.setFixedHeight(int(self.config_slider_height*0.7))
+        self.set_config_combo_box_stylesheet(combo_box)
+
+        # Liste der Dateinamen ohne Endung
+        theme_names = [os.path.splitext(file)[0] for file in os.listdir('themes') if file.endswith('.theme')]
+
+        # Füge die Dateinamen zur ComboBox hinzu
+        combo_box.addItems(theme_names)
+
+        combo_box.setCurrentText(config.theme)
+        combo_box.currentTextChanged.connect(lambda theme: (config.set_theme(theme),config.write_configfile('theme', theme),self.load_theme(env,config),self.gui_repaint(env,config)))
+        layout.addWidget(combo_box)
+
+        layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
+
+        widget.setLayout(layout)
+        return widget
     
-    def fill_config_frame(self,env,config,config_frame):
+
+    def fill_config_frame(self,env,config):
+        config_frame = self.config_frame # noch auf self.config_frame umbauen
         # Erstelle Widget, Buttons und Regler
+        widget_theme = self.show_config_theme(env,config)
         widget_volume_fokuswarnung = self.show_config_volume_fokuswarnung(env,config)
         widget_warnschwelle = self.show_config_warnschwelle(env,config)
         widget_intervall = self.show_config_intervall(env,config)
         widget_debug = self.show_config_debug(env,config)
 
         config_layout = QVBoxLayout()
+        config_layout.addWidget(widget_theme)
         config_layout.addWidget(widget_volume_fokuswarnung)
         config_layout.addWidget(widget_warnschwelle)
         config_layout.addWidget(widget_intervall)
@@ -543,24 +747,25 @@ class MainWindow(QMainWindow):
         widget = QWidget()
         widget.setFixedWidth(self.statusdisplay_widget_width)
         widget.setFixedHeight(self.statusdisplay_widget_height)
-        widget.setStyleSheet(f'background-color: {self.statusdisplay_color_background} ; border-radius: {self.statusdisplay_widget_border_radius}px; border: 0px solid black')
+        self.set_config_widget_stylesheet(widget)
 
         layout = QHBoxLayout()
 
         label = QLabel('Fokus')
         label.setFixedWidth(self.statusdisplay_label_width) 
         label.setFixedHeight(self.statusdisplay_label_height)
-        label.setStyleSheet(f'color: {self.statusdisplay_color_font}; font-size: 14px; border: 0px solid black; padding: 5px')
+        self.set_label_stylesheet(label)
         layout.addWidget(label)
 
         env.init_statusdisplay_fokus_progressbar()
+        self.set_display_fokusbar_stylesheet(env)
         layout.addWidget(env.statusdisplay_fokus_progressbar)
 
         layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum))
         widget.setLayout(layout)
         return widget
 
-    def fill_statusdisplay_frame(self,env,config,statusdisplay_frame):
+    def fill_display_frame(self,env,config):
         layout = QVBoxLayout()
         # layout.addWidget(QLabel('Statusdisplay'))
 
@@ -588,7 +793,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(fokus_bar)
 
         layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
-        statusdisplay_frame.setLayout(layout)
+        self.display_frame.setLayout(layout)
         
     
     def fill_debug_frame(self,env,config,debug_frame):
@@ -600,27 +805,59 @@ class MainWindow(QMainWindow):
         env.set_debug_label(debug_label)
         return debug_label
 
+    def set_main_stylesheet(self):
+        self.setStyleSheet(f"background-color: {self.theme_color_window_background};")
+
+    def set_frame_config_stylesheet(self):
+        self.config_frame.setStyleSheet(f'background-color: {self.theme_color_frame_config_background}')
+
+    def set_frame_display_stylesheet(self):
+        self.display_frame.setStyleSheet(f'background-color: {self.theme_color_frame_display_background}')
+    
+    def set_config_widget_stylesheet(self,widget):
+        widget.setStyleSheet(f'background-color: {self.theme_color_config_widget_background} ; border-radius: {self.config_widget_border_radius}px; border: 0px solid black')
+    
+    def set_label_stylesheet(self,label):
+        label.setStyleSheet(f'color: {self.theme_color_config_label_font}; font-size: 14px; border: 0px solid black; padding: 5px')
+
+    def set_config_combo_box_stylesheet(self,combo_box):
+        combo_box.setStyleSheet(f'background-color: {self.theme_color_config_combo_box_background} ; color: {self.theme_color_config_combo_box_font}; selection-background-color: {self.theme_color_config_combo_box_selection_background} ; selection-color:{self.theme_color_config_combo_box_selection_font} ; font-size: 12px; border: 1px solid {self.theme_color_config_combo_box_font}; padding: 5px; border-radius: 4px')
+    
+    def set_config_slider_stylesheet(self,slider):
+        height = slider.height()
+        groove_height, handle_margin = self.calculate_slider_componets_size(height)
+        slider.setStyleSheet(self.create_slider_style_sheet(groove_height,handle_margin,self.theme_color_config_slider_groove_background,self.theme_color_config_slider_handle_background,self.theme_color_config_slider_sub_page_background,self.theme_color_config_slider_add_page_background))
+
+    def set_config_bubble_stylesheet(self,bubble):
+        max_radius = self.get_max_radius(bubble.sizeHint().width() , bubble.sizeHint().height())
+        bubble.setStyleSheet(f'background-color: {self.theme_color_config_bubble_background} ; color: {self.theme_color_config_bubble_font}; font-size: 14px; border: {self.theme_config_bubble_border}; padding: 5px; border-radius: {max_radius}px')
+
+    def set_display_fokusbar_stylesheet(self,env):
+        env.statusdisplay_fokus_progressbar.setStyleSheet(f'QProgressBar {{background-color: {self.theme_color_display_fokusbar_background}; color: {self.theme_color_display_fokusbar_font}; text-align: {self.theme_align_display_fokusbar_text_align}; }}\
+                                                            QProgressBar::chunk {{background-color: {self.theme_color_display_fokusbar_chunk_background}; border: {self.theme_display_fokusbar_chunk_border}; border-radius: {self.theme_display_fokusbar_chunk_border_radius} }}\
+                                                            ')
 
     def initUI(self,env,config):
         self.setWindowTitle('Fokus Check')
-        self.setGeometry(100, 100, 800, 400)
+        self.setGeometry(500, 100, 800, 400)
+        self.set_main_stylesheet() 
 
         # Frames erstellen
-        config_frame = self.create_config_frame()
-        statusdisplay_frame = self.create_statusdisplay_frame()
+        self.create_config_frame()
+        self.create_display_frame()
         # button_frame = self.create_button_frame()
         # debug_frame = self.create_debug_frame()
 
         # Frames befüllen 
-        self.fill_config_frame(env,config,config_frame)
-        self.fill_statusdisplay_frame(env,config,statusdisplay_frame)
+        self.fill_config_frame(env,config)
+        self.fill_display_frame(env,config)
         # self.fill_debug_frame(env,config,debug_frame)
 
 
         # Layouts erstellen
         left_layout = QVBoxLayout()
-        left_layout.addWidget(config_frame,1)
-        left_layout.addWidget(statusdisplay_frame,1)
+        left_layout.addWidget(self.config_frame,1)
+        left_layout.addWidget(self.display_frame,1)
         # left_layout.addWidget(button_frame,1)
         left_layout.addSpacerItem(QSpacerItem(0, 0, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
@@ -644,7 +881,7 @@ def set_volume(sound, volume):
 def gui(env,config):
     app = QApplication([])
     main_window = MainWindow(env,config)
-    main_window.setFixedSize(580, 580)
+    main_window.setFixedSize(main_window.window_width, main_window.window_height)
     main_window.show()
     app.exec_()
     env.set_running(False)
