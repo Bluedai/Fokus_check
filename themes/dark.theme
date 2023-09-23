@@ -1,0 +1,30 @@
+window_background = '#000000'
+
+frame_config_background = '#0f0f0f'
+frame_display_background = '#0f0f0f'
+
+widget_background = '#000000'
+widget_font = '#C2C2C2'
+
+config_bubble_background = '#000000'
+config_bubble_font = '#C2C2C2'
+config_bubble_border = '1px solid #C2C2C2'
+
+config_slider_border = '1px solid #C2C2C2'
+config_slider_groove_background = '#000000'
+config_slider_handle_background = 'blue'
+config_slider_add_page_background = '#3399ff'
+config_slider_sub_page_background = 'green'
+
+config_combo_box_background = '#000000'
+config_combo_box_font = '#C2C2C2'
+config_combo_box_selection_background = '#3399ff'
+config_combo_box_selection_font = '#000000'
+
+display_fokusbar_background = '#171717'
+display_fokusbar_font = '#c2c2c2'
+display_fokusbar_text_align = 'center'
+display_fokusbar_chunk_background = '#8B49D5'
+display_fokusbar_chunk_border = '1px solid #C2C2C2'
+display_fokusbar_chunk_border_radius = '10px'
+
