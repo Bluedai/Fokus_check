@@ -5,6 +5,7 @@ import pyautogui
 # from collections import defaultdict
 import pygame
 import os
+import requests
 # from PIL import Image
 import threading
 from PyQt5.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget, QMainWindow, QFrame, QSpacerItem, QSizePolicy, QHBoxLayout, QSlider, QProgressBar, QComboBox
@@ -93,7 +94,7 @@ class myconfig:
         self.intervall = 10
         self.mp3_fokuswarnung = 'Fokuswarnung.mp3'
         self.volume_fokuswarnung = 100
-        self.theme = 'default'
+        self.theme = 'light'
 
     def set_theme(self,theme):
         self.theme = theme
@@ -318,8 +319,9 @@ class MainWindow(QMainWindow):
         self.theme_color_config_widget_background = '#C2C2C2'
         self.theme_color_config_label_font = 'black'
         self.theme_color_config_combo_box_background = 'white'
-        self.theme_color_config_combo_box_selection_background = '#3399ff'
         self.theme_color_config_combo_box_font = 'black'
+        self.theme_color_config_combo_box_selection_background = '#3399ff'
+        self.theme_color_config_combo_box_selection_font = 'black'
 
         self.theme_config_slider_border = '1px solid black'
         self.theme_color_config_slider_groove_background = 'white'
@@ -344,12 +346,27 @@ class MainWindow(QMainWindow):
         self.statusdisplay_color_font = 'black'
 
     def load_theme(self,env,config):
-        theme = config.theme
-        themefile = f'themes/{theme}.theme'
+        theme_name = config.theme
+        theme_dir = 'themes'
+        theme_file = os.path.join(theme_dir, theme_name + '.theme')
+        default_theme_file = os.path.join(theme_dir, 'light.theme')
+
+        if not os.path.exists(theme_dir):
+            os.makedirs(theme_dir)
+        
+        if not os.path.isfile(default_theme_file):
+            github_url = "https://raw.githubusercontent.com/Bluedai/Fokus_check/main/themes/light.theme"
+            response = requests.get(github_url)
+            if response.status_code == 200:
+                with open(default_theme_file, 'wb') as file:
+                    file.write(response.content)
+
+        if not os.path.isfile(theme_file):
+            theme_file = os.path.join(theme_dir, 'light.theme')
         
         try:
-            with open(themefile, 'r') as file:
-                print(f"Lade Theme: {theme} aus {themefile}")
+            with open(theme_file, 'r') as file:
+                # print(f"Lade Theme: {theme_name} aus {theme_file}")
                 for line in file:
                     if line.startswith('window_background ='):
                         self.theme_color_window_background = line.split('=')[1].split("'")[1].strip()
